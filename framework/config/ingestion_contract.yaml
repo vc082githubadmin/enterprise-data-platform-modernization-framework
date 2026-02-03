@@ -1,0 +1,35 @@
+# Ingestion Contract (Draft v0.1)
+dataset:
+  name: sample_customer
+  domain: payments
+  description: "Synthetic sample dataset for framework scaffolding."
+
+source:
+  type: file
+  format: csv
+  location: "examples/data/sample_customer.csv"
+
+target:
+  logical_layer: bronze
+  table_name: bronze.sample_customer
+  mode: append
+
+schema:
+  version: 1
+  columns:
+    - name: customer_id
+      type: string
+      nullable: false
+    - name: created_ts
+      type: timestamp
+      nullable: true
+
+quality:
+  enabled: false
+  rules: []
+
+lineage:
+  enabled: false
+
+observability:
+  enabled: false
