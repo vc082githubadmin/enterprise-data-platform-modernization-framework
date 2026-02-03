@@ -13,7 +13,7 @@ Design intent:
 
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
-
+from framework.core.contract_validator import validate_contract
 
 @dataclass
 class IngestionResult:
@@ -35,6 +35,17 @@ class IngestionEngine:
         self.extensions.append(extension)
 
     def run(self, contract: Dict[str, Any]) -> IngestionResult:
-        # v0.1: placeholder behavior
+        validation = validate_contract(contract)
+        if not validation.is_valid:
+            return IngestionResult(
+                dataset_name=contract.get("dataset", {}).get("name", "unknown"),
+                status="INVALID_CONTRACT",
+                details={"errors": [e.__dict__ for e in validation.errors]},
+            )
+
         dataset_name = contract.get("dataset", {}).get("name", "unknown")
-        return IngestionResult(dataset_name=dataset_name, status="SCAFFOLD_ONLY", details={"note": "v0.1 scaffold"})
+        return IngestionResult(
+            dataset_name=dataset_name,
+            status="SCAFFOLD_ONLY",
+            details={"note": "v0.1 scaffold - contract validated"},
+        )
