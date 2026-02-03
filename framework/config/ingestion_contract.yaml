@@ -1,8 +1,16 @@
-# Ingestion Contract (Draft v0.1)
+# Ingestion Contract (v0.1)
+
+contract:
+  version: 1
+
 dataset:
   name: sample_customer
   domain: payments
   description: "Synthetic sample dataset for framework scaffolding."
+  owner: "data-platform-team"
+  tags:
+    - sample
+    - payments
 
 source:
   type: file
@@ -23,6 +31,14 @@ schema:
     - name: created_ts
       type: timestamp
       nullable: true
+
+keys:
+  primary:
+    - customer_id
+
+partitioning:
+  columns:
+    - created_ts
 
 quality:
   enabled: false
