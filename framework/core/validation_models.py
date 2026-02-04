@@ -22,7 +22,7 @@ class Issue:
 
     def to_dict(self) -> Dict[str, Any]:
         d = {
-            "code": self.code,
+            "code": self.code.value if hasattr(self.code, "value") else self.code,
             "severity": self.severity.value,
             "path": self.path,
             "message": self.message,

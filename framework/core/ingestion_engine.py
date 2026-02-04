@@ -38,17 +38,25 @@ class IngestionEngine:
     def run(self, contract: Dict[str, Any]) -> IngestionResult:
         validation = validate_contract(contract)
 
+        dataset = contract.get("dataset", {})
+
+        dataset_name = (
+            dataset.get("id")      # future v1 canonical ID
+            or dataset.get("name") # current v0.1
+            or "unknown"
+        )
 
         if not validation.is_valid(strict=self.strict_validation):
             return IngestionResult(
-                dataset_name=contract.get("dataset", {}).get("name", "unknown"),
+                dataset_name=dataset_name,
                 status="INVALID_CONTRACT",
                 details=validation.to_dict(),
             )
 
-        dataset_name = contract.get("dataset", {}).get("name", "unknown")
         return IngestionResult(
             dataset_name=dataset_name,
             status="SCAFFOLD_ONLY",
             details={"note": "v0.1 scaffold - contract validated"},
         )
+
+        

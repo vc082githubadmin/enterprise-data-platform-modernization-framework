@@ -41,8 +41,8 @@ def validate_contract(contract: Dict[str, Any]) -> ValidationResult:
                 )
             )
 
-    # Stop early if core structure is missing
-    if issues:
+    # Only stop if schema.columns is missing entirely (semantic checks depend on it)
+    if any(i.path == "schema.columns" for i in issues):
         return ValidationResult(issues=issues)
 
     # Contract version enforcement
@@ -122,3 +122,17 @@ def validate_contract(contract: Dict[str, Any]) -> ValidationResult:
         seen.add(name)
 
     return ValidationResult(issues=issues)
+
+def _get(d: Dict[str, Any], path: str) -> Any:
+    """
+    Safely fetch nested dict values using dotted paths like 'dataset.name'.
+    Returns None if any segment is missing.
+    """
+    cur: Any = d
+    for part in path.split("."):
+        if not isinstance(cur, dict):
+            return None
+        if part not in cur:
+            return None
+        cur = cur[part]
+    return cur
