@@ -9,54 +9,14 @@ Future:
 - richer typing/constraints
 - environment-specific policies
 """
-
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
-
-
-class ContractValidationErrorCodes:
-    MISSING_REQUIRED_FIELD = "MISSING_REQUIRED_FIELD"
-    INVALID_VALUE = "INVALID_VALUE"
-    DUPLICATE_COLUMN = "DUPLICATE_COLUMN"
-    EMPTY_COLUMNS = "EMPTY_COLUMNS"
-    UNSUPPORTED_CONTRACT_VERSION = "UNSUPPORTED_CONTRACT_VERSION"
-
-
-@dataclass
-class ValidationError:
-    code: str
-    path: str
-    message: str
-
-
-@dataclass
-class ValidationResult:
-    is_valid: bool
-    errors: List[ValidationError] = field(default_factory=list)
-
-    def raise_if_invalid(self) -> None:
-        if not self.is_valid:
-            formatted = "\n".join([f"- [{e.code}] {e.path}: {e.message}" for e in self.errors])
-            raise ValueError(f"Contract validation failed:\n{formatted}")
-
-
-def _get(dct: Dict[str, Any], path: str) -> Optional[Any]:
-    """
-    Safe get using dot-separated path. Returns None if any segment is missing.
-    Example: _get(contract, "dataset.name")
-    """
-    cur: Any = dct
-    for part in path.split("."):
-        if not isinstance(cur, dict) or part not in cur:
-            return None
-        cur = cur[part]
-    return cur
+from typing import Any, Dict, Optional, List
+from framework.core.validation_codes import ContractValidationErrorCodes
+from framework.core.validation_models import Issue, Severity, ValidationResult
 
 
 def validate_contract(contract: Dict[str, Any]) -> ValidationResult:
-    errors: List[ValidationError] = []
+    issues: List[Issue] = []
 
-    # Required fields (v0.1)
     required_paths = [
         "contract.version",
         "dataset.name",
@@ -71,35 +31,40 @@ def validate_contract(contract: Dict[str, Any]) -> ValidationResult:
 
     for p in required_paths:
         if _get(contract, p) is None:
-            errors.append(
-                ValidationError(
+            issues.append(
+                Issue(
                     code=ContractValidationErrorCodes.MISSING_REQUIRED_FIELD,
+                    severity=Severity.ERROR,
                     path=p,
                     message="Required field is missing.",
+                    hint=f"Add '{p}' to the contract as per the spec.",
                 )
             )
 
     # Stop early if core structure is missing
-    if errors:
-        return ValidationResult(is_valid=False, errors=errors)
+    if issues:
+        return ValidationResult(issues=issues)
 
     # Contract version enforcement
     contract_version = _get(contract, "contract.version")
     if contract_version != 1:
-        errors.append(
-            ValidationError(
+        issues.append(
+            Issue(
                 code=ContractValidationErrorCodes.UNSUPPORTED_CONTRACT_VERSION,
+                severity=Severity.ERROR,
                 path="contract.version",
                 message=f"Unsupported contract version: {contract_version}. Expected: 1",
+                hint="Set contract.version to 1 for v0.1 contracts.",
             )
         )
 
     # Validate target enums
     logical_layer = _get(contract, "target.logical_layer")
     if logical_layer not in ("bronze", "silver", "gold"):
-        errors.append(
-            ValidationError(
+        issues.append(
+            Issue(
                 code=ContractValidationErrorCodes.INVALID_VALUE,
+                severity=Severity.ERROR,
                 path="target.logical_layer",
                 message="Must be one of: bronze, silver, gold",
             )
@@ -107,9 +72,10 @@ def validate_contract(contract: Dict[str, Any]) -> ValidationResult:
 
     mode = _get(contract, "target.mode")
     if mode not in ("append", "overwrite"):
-        errors.append(
-            ValidationError(
+        issues.append(
+            Issue(
                 code=ContractValidationErrorCodes.INVALID_VALUE,
+                severity=Severity.ERROR,
                 path="target.mode",
                 message="Must be one of: append, overwrite",
             )
@@ -118,23 +84,26 @@ def validate_contract(contract: Dict[str, Any]) -> ValidationResult:
     # Schema columns validation
     cols = _get(contract, "schema.columns")
     if not isinstance(cols, list) or len(cols) == 0:
-        errors.append(
-            ValidationError(
+        issues.append(
+            Issue(
                 code=ContractValidationErrorCodes.EMPTY_COLUMNS,
+                severity=Severity.ERROR,
                 path="schema.columns",
                 message="schema.columns must be a non-empty array",
+                hint="Add at least one column definition under schema.columns.",
             )
         )
-        return ValidationResult(is_valid=False, errors=errors)
+        return ValidationResult(issues=issues)
 
     # Uniqueness of column names
     seen = set()
     for i, col in enumerate(cols):
         name = col.get("name") if isinstance(col, dict) else None
         if not name:
-            errors.append(
-                ValidationError(
+            issues.append(
+                Issue(
                     code=ContractValidationErrorCodes.MISSING_REQUIRED_FIELD,
+                    severity=Severity.ERROR,
                     path=f"schema.columns[{i}].name",
                     message="Column name is required",
                 )
@@ -142,13 +111,14 @@ def validate_contract(contract: Dict[str, Any]) -> ValidationResult:
             continue
 
         if name in seen:
-            errors.append(
-                ValidationError(
+            issues.append(
+                Issue(
                     code=ContractValidationErrorCodes.DUPLICATE_COLUMN,
+                    severity=Severity.ERROR,
                     path=f"schema.columns[{i}].name",
                     message=f"Duplicate column name: {name}",
                 )
             )
         seen.add(name)
 
-    return ValidationResult(is_valid=(len(errors) == 0), errors=errors)
+    return ValidationResult(issues=issues)

@@ -28,7 +28,8 @@ class IngestionEngine:
     Future: integrate plug-in extensions and runtime adapters.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, strict_validation: bool = False) -> None:
+        self.strict_validation = strict_validation
         self.extensions = []
 
     def register_extension(self, extension: Any) -> None:
@@ -36,11 +37,13 @@ class IngestionEngine:
 
     def run(self, contract: Dict[str, Any]) -> IngestionResult:
         validation = validate_contract(contract)
-        if not validation.is_valid:
+
+
+        if not validation.is_valid(strict=self.strict_validation):
             return IngestionResult(
                 dataset_name=contract.get("dataset", {}).get("name", "unknown"),
                 status="INVALID_CONTRACT",
-                details={"errors": [e.__dict__ for e in validation.errors]},
+                details=validation.to_dict(),
             )
 
         dataset_name = contract.get("dataset", {}).get("name", "unknown")

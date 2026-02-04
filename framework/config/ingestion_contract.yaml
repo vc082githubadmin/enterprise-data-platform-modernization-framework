@@ -1,51 +1,58 @@
-# Ingestion Contract (v0.1)
-
 contract:
-  version: 1
+  schema_version: 1
+  document_version: "0.1"
+  created_by: "data-platform-team"     # optional
+  created_at: "2026-02-03"             # optional (ISO-8601)
+  description: "Metadata-driven ingestion contract"
 
 dataset:
-  name: sample_customer
-  domain: payments
+  id: "payments.sample_customer"       # canonical ID (domain.name)
+  name: "sample_customer"
+  domain: "payments"
   description: "Synthetic sample dataset for framework scaffolding."
-  owner: "data-platform-team"
-  tags:
-    - sample
-    - payments
+  owner:
+    team: "data-platform-team"
+    slack: "#data-platform"            # optional
+    email: "data-platform@company.com" # optional
+  tags: ["sample", "payments"]
 
 source:
-  type: file
-  format: csv
-  location: "examples/data/sample_customer.csv"
+  kind: "file"                         # enum: file|table|api
+  file:
+    format: "csv"                      # enum-ish: csv|json|parquet|...
+    location: "examples/data/sample_customer.csv"
+    options: {}                        # optional reader options (bounded later)
 
 target:
-  logical_layer: bronze
-  table_name: bronze.sample_customer
-  mode: append
+  layer: "bronze"                      # enum: bronze|silver|gold
+  name: "sample_customer"              # logical object name
+  table: "bronze.sample_customer"      # physical-ish name (still vendor-agnostic)
+  write:
+    mode: "append"                     # enum: append|overwrite
+    merge:                             # reserved for future (optional)
+      enabled: false
 
 schema:
-  version: 1
+  version: 1                           # dataset schema version
   columns:
-    - name: customer_id
-      type: string
+    - name: "customer_id"
+      type: "string"
       nullable: false
-    - name: created_ts
-      type: timestamp
+    - name: "created_ts"
+      type: "timestamp"
       nullable: true
 
 keys:
-  primary:
-    - customer_id
+  primary: ["customer_id"]             # must exist in schema.columns
 
 partitioning:
-  columns:
-    - created_ts
+  columns: ["created_ts"]              # must exist in schema.columns
 
-quality:
-  enabled: false
-  rules: []
-
-lineage:
-  enabled: false
-
-observability:
-  enabled: false
+governance:
+  quality:
+    enabled: false
+    rules: []
+  lineage:
+    enabled: false
+  observability:
+    enabled: false
