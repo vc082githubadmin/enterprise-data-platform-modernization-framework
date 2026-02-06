@@ -17,14 +17,26 @@ from framework.core.validation_models import Issue, Severity, ValidationResult
 def validate_contract(contract: Dict[str, Any]) -> ValidationResult:
     issues: List[Issue] = []
 
+    # required_paths = [
+    #     "contract.version",
+    #     "dataset.name",
+    #     "dataset.domain",
+    #     "source.type",
+    #     "target.logical_layer",
+    #     "target.table_name",
+    #     "target.mode",
+    #     "schema.version",
+    #     "schema.columns",
+    # ]
+
     required_paths = [
-        "contract.version",
+        "contract.schema_version",
         "dataset.name",
         "dataset.domain",
-        "source.type",
-        "target.logical_layer",
-        "target.table_name",
-        "target.mode",
+        "source.kind",
+        "target.layer",
+        "target.table",
+        "target.write.mode",
         "schema.version",
         "schema.columns",
     ]
@@ -46,37 +58,72 @@ def validate_contract(contract: Dict[str, Any]) -> ValidationResult:
         return ValidationResult(issues=issues)
 
     # Contract version enforcement
-    contract_version = _get(contract, "contract.version")
+    contract_version = _get(contract, "contract.schema_version")
     if contract_version != 1:
         issues.append(
             Issue(
                 code=ContractValidationErrorCodes.UNSUPPORTED_CONTRACT_VERSION,
                 severity=Severity.ERROR,
-                path="contract.version",
+                path="contract.schema_version",
                 message=f"Unsupported contract version: {contract_version}. Expected: 1",
                 hint="Set contract.version to 1 for v0.1 contracts.",
             )
         )
 
     # Validate target enums
-    logical_layer = _get(contract, "target.logical_layer")
+    logical_layer = _get(contract, "target.layer")
     if logical_layer not in ("bronze", "silver", "gold"):
         issues.append(
             Issue(
                 code=ContractValidationErrorCodes.INVALID_VALUE,
                 severity=Severity.ERROR,
-                path="target.logical_layer",
+                path="target.layer",
                 message="Must be one of: bronze, silver, gold",
             )
         )
-
-    mode = _get(contract, "target.mode")
-    if mode not in ("append", "overwrite"):
+    
+    # Validate source enums
+    source_kind = _get(contract, "source.kind")
+    if source_kind not in ("file", "table", "api"):
         issues.append(
             Issue(
                 code=ContractValidationErrorCodes.INVALID_VALUE,
                 severity=Severity.ERROR,
-                path="target.mode",
+                path="source.kind",
+                message="Must be one of: file, table, api",
+            )
+        )
+
+    # If source.kind == file, require minimal file block fields
+    if source_kind == "file":
+        if _get(contract, "source.file.format") is None:
+            issues.append(
+                Issue(
+                    code=ContractValidationErrorCodes.MISSING_REQUIRED_FIELD,
+                    severity=Severity.ERROR,
+                    path="source.file.format",
+                    message="Required field is missing for file source.",
+                    hint="Add 'source.file.format' for file sources.",
+                )
+            )
+        if _get(contract, "source.file.location") is None:
+            issues.append(
+                Issue(
+                    code=ContractValidationErrorCodes.MISSING_REQUIRED_FIELD,
+                    severity=Severity.ERROR,
+                    path="source.file.location",
+                    message="Required field is missing for file source.",
+                    hint="Add 'source.file.location' for file sources.",
+                )
+            )
+
+    write_mode = _get(contract, "target.write.mode")
+    if write_mode not in ("append", "overwrite"):
+        issues.append(
+            Issue(
+                code=ContractValidationErrorCodes.INVALID_VALUE,
+                severity=Severity.ERROR,
+                path="target.write.mode",
                 message="Must be one of: append, overwrite",
             )
         )
@@ -97,6 +144,8 @@ def validate_contract(contract: Dict[str, Any]) -> ValidationResult:
 
     # Uniqueness of column names
     seen = set()
+    col_names: List[str] = []
+
     for i, col in enumerate(cols):
         name = col.get("name") if isinstance(col, dict) else None
         if not name:
@@ -119,7 +168,60 @@ def validate_contract(contract: Dict[str, Any]) -> ValidationResult:
                     message=f"Duplicate column name: {name}",
                 )
             )
-        seen.add(name)
+        else:
+            seen.add(name)
+            col_names.append(name)
+
+    # Semantic checks: keys.primary must exist in schema columns
+    primary_keys = _get(contract, "keys.primary")
+    if primary_keys is not None:
+        if not isinstance(primary_keys, list) or len(primary_keys) == 0:
+            issues.append(
+                Issue(
+                    code=ContractValidationErrorCodes.INVALID_VALUE,
+                    severity=Severity.ERROR,
+                    path="keys.primary",
+                    message="keys.primary must be a non-empty array when provided",
+                )
+            )
+        else:
+            for j, key in enumerate(primary_keys):
+                if key not in col_names:
+                    issues.append(
+                        Issue(
+                            code=ContractValidationErrorCodes.INVALID_VALUE,
+                            severity=Severity.ERROR,
+                            path=f"keys.primary[{j}]",
+                            message=f"Primary key '{key}' must exist in schema.columns",
+                            hint="Add the column to schema.columns or fix keys.primary.",
+                        )
+                    )
+
+    # Semantic checks: partitioning.columns must exist in schema columns
+    part_cols = _get(contract, "partitioning.columns")
+    if part_cols is not None:
+        if not isinstance(part_cols, list):
+            issues.append(
+                Issue(
+                    code=ContractValidationErrorCodes.INVALID_VALUE,
+                    severity=Severity.ERROR,
+                    path="partitioning.columns",
+                    message="partitioning.columns must be an array when provided",
+                )
+            )
+        else:
+            for j, c in enumerate(part_cols):
+                if c not in col_names:
+                    issues.append(
+                        Issue(
+                            code=ContractValidationErrorCodes.INVALID_VALUE,
+                            severity=Severity.ERROR,
+                            path=f"partitioning.columns[{j}]",
+                            message=f"Partition column '{c}' must exist in schema.columns",
+                            hint="Add the column to schema.columns or fix partitioning.columns.",
+                        )
+                    )
+
 
     return ValidationResult(issues=issues)
 
