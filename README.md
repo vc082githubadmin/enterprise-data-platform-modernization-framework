@@ -2,41 +2,127 @@
 
 A reusable, metadata-driven framework for large-scale data platform modernization, migration, and AI-ready re-engineering in regulated enterprise environments.
 
+---
+
+## Why this framework exists
+
+Large enterprises rarely fail at data modernization because of missing tools.  
+They fail due to **inconsistent architecture, bespoke pipelines, and governance bolted on too late**.
+
+This framework provides an **enterprise-owned control plane** for data platforms:
+
+- Metadata-first and contract-driven
+- Extensible by design
+- Vendor-agnostic
+- Safe for regulated environments
+
+It is intentionally built as a **framework**, not a one-off implementation.
+
+---
+
 ## Who this is for
-- Enterprise Data Architects
-- Platform Architects / Platform Engineering leaders
-- Lead Data Engineers building modernization and migration initiatives
-- Regulated, large-scale organizations (banking, payments, retail)
+
+- **Enterprise Data Architects**
+- **Platform Architects / Platform Engineering leaders**
+- **Lead Data Engineers** driving modernization and migration initiatives
+- **Large, regulated organizations** (banking, payments, retail, healthcare)
+
+---
 
 ## What this repository is (v0.1)
-This repo is intentionally a **framework scaffold** (not a full data platform). It focuses on:
-- A clear enterprise-oriented repo structure
-- A metadata-driven approach (contracts + extensibility)
-- Architecture docs, design principles, and ADRs (Architecture Decision Records)
-- A path to evolve into ingestion/quality/lineage/observability/AI-ready capabilities
+
+This repository represents a **framework foundation**, not a complete data platform.
+
+**v0.1 focuses on:**
+
+- A clear, enterprise-oriented repository structure
+- A **metadata-driven ingestion contract** as the primary interface
+- Contract validation scaffolding to prevent drift
+- Architecture documentation, design principles, and ADRs (Architecture Decision Records)
+- A deliberate evolution path toward:
+  - batch, incremental, and CDC ingestion
+  - data quality and reconciliation
+  - lineage and observability
+  - semantic and AI-ready data foundations
+
+---
 
 ## What this repository is not (v0.1)
-- No streaming/CDC pipelines
-- No cloud-specific service implementations
-- No production-ready runtime deployment
-- No real customer data or proprietary assets
+
+To set correct expectations, v0.1 explicitly does **not** include:
+
+- Streaming or CDC pipeline implementations
+- Cloud- or vendor-specific services (AWS, Azure, Snowflake, Databricks)
+- Production-ready runtime deployments
+- Real customer data or proprietary assets
+
+All examples use **synthetic data and generalized patterns**.
+
+---
+
+## Release status
+
+- **v0.1 — Metadata-driven ingestion foundation**
+  - Ingestion contract (schema + semantics)
+  - Contract validation scaffold
+  - ADRs documenting core architectural decisions
+  - Reference architecture and design principles
+
+---
 
 ## Quick start (v0.1)
-Framework-only this week. Start by reading:
-- `docs/scope.md`
-- `architecture/reference-architecture.md`
-- `adr/ADR-001-metadata-driven-ingestion.md`
 
-## Repo layout
-- `architecture/` Reference architecture and platform views
-- `docs/` Scope, principles, executive summaries
-- `adr/` Architecture Decision Records
-- `research/` Research questions and notes that inform decisions
-- `framework/` Core framework scaffolding (interfaces, config contracts, extension points)
-- `examples/` Minimal examples (framework usage patterns)
+To understand the framework intent and structure, start with:
+
+- `docs/scope.md`  
+  *Scope, non-goals, and definition of done*
+
+- `architecture/reference-architecture.md`  
+  *Vendor-agnostic platform view*
+
+- `docs/ingestion-contract-spec.md`  
+  *Ingestion contract specification*
+
+- `adr/ADR-002-ingestion-contract-as-interface.md`  
+  *Core architectural decision*
+
+---
+
+## Repository layout
+
+```text
+architecture/    Reference architecture and platform views
+docs/            Scope, design principles, executive summaries, specifications
+adr/             Architecture Decision Records (ADRs)
+research/        Research questions and synthesis informing design decisions
+framework/       Core framework scaffolding (contracts, validators, extensions)
+examples/        Minimal examples illustrating framework usage patterns
+```
+---
+## Design philosophy
+
+- **Architecture first, tools second**
+- **Contracts over hardcoding**
+- **Reusable frameworks over bespoke pipelines**
+- **Incremental modernization over big-bang rewrites**
+- **Governance by design, not as an afterthought**
+- **Enterprise-safe defaults**
+
+---
 
 ## Disclaimer
-This is a personal project. No employer/client confidential information is included. All examples use synthetic data and generalized patterns.
+
+This is a personal project.
+
+- No employer or client confidential information is included
+- No proprietary code or datasets are used
+- All examples are synthetic and generalized
+
+---
 
 ## License
-Recommended: Apache-2.0 or MIT (add `LICENSE` when ready).
+
+Planned: **Apache-2.0** or **MIT**  
+(Add `LICENSE` file when finalized.)
+
+---
