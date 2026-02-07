@@ -14,8 +14,13 @@ import json
 
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
+import uuid
+
+from framework.core.artifacts.writer import write_validation_artifact
 from framework.core.contract_validator import validate_contract
 from framework.core.contract_loader import load_contract
+from framework.core.lineage.hooks import record_lineage
+from framework.core.observability.hooks import emit_validation_event
 
 DEFAULT_CONTRACT_PATH = "framework/config/ingestion_contract.yaml"
 
@@ -69,24 +74,64 @@ class IngestionEngine:
 # Thursday 02/05/2026 - 14:30 UTC
 
 def run_from_file(contract_path: str = DEFAULT_CONTRACT_PATH) -> int:
+    
     """
-    Thursday execution gate.
-    Loads contract, runs validation, enforces block/proceed decision.
+    Friday execution gate:
+    - Loads contract
+    - Validates
+    - Writes validation artifact (always)
+    - Emits observability + lineage hooks when enabled in contract
+    - Blocks on INVALID_CONTRACT
     """
+    run_id = uuid.uuid4().hex # unique run identifier for artifact tracking (Friday 02/07 feature )
     contract = load_contract(contract_path)
-
+    
+    dataset = contract.get("dataset", {}) or {}
+    dataset_id = dataset.get("id") or dataset.get("name") or "unknown"
+    
     engine = IngestionEngine(strict_validation=True)
     result = engine.run(contract)
 
+    # Always write validation artifact (pass or fail)
+    artifact_path = write_validation_artifact(
+        dataset_id=dataset_id,
+        run_id=run_id,
+        contract_path=contract_path,
+        validation_result=(result.details or {}),
+        status=result.status,
+    )
+    print(f"🧾 Validation artifact written: {artifact_path}")
+
+    # Hooks (contract-driven toggles)
+    governance = contract.get("governance", {}) or {}
+    if governance.get("observability", {}).get("enabled", False):
+        emit_validation_event(
+            {
+                "run_id": run_id,
+                "dataset_id": dataset_id,
+                "status": result.status,
+                "artifact_path": artifact_path,
+            }
+        )
+
+    if governance.get("lineage", {}).get("enabled", False):
+        source = contract.get("source", {}) or {}
+        target = contract.get("target", {}) or {}
+        record_lineage(
+            {
+                "run_id": run_id,
+                "dataset_id": dataset_id,
+                "source": source,
+                "target": target,
+                "artifact_path": artifact_path,
+            }
+        )
+
     print(result)
-
+    
     if result.status == INVALID_CONTRACT:
-        print("❌ Contract validation failed. Ingestion blocked.")
-        if result.details:
-            print(json.dumps(result.details, indent=2))
-        return 1
-
-    print("✅ Contract validation passed. Ingestion may proceed.")
+        print(f"❌ Contract validation failed for dataset '{dataset_id}'. See artifact for details.")
+        return 1    
     return 0
 
 if __name__ == "__main__":
