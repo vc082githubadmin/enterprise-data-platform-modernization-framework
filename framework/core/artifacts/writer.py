@@ -5,9 +5,6 @@ from datetime import datetime, timezone
 import tempfile
 from typing import Any, Dict, Optional
 
-
-
-
 def write_validation_artifact(
     dataset_id: str,
     run_id: str,
@@ -161,4 +158,34 @@ def write_execution_not_attempted_artifact(
     }
 
     _atomic_write_json(artifact_path, payload)
+    return artifact_path
+
+def write_step_result_artifact(
+    dataset_id: str,
+    run_id: str,
+    step_id: str,
+    step_result: Dict[str, Any],
+    base_dir: str = "artifacts/runs",
+) -> str:
+    """
+    Path: artifacts/runs/<dataset_id>/<run_id>/execution/step_results/<step_id>.json
+    """
+    safe_dataset = dataset_id.replace("/", "_")
+    out_dir = os.path.join(base_dir, safe_dataset, run_id, "execution", "step_results")
+    os.makedirs(out_dir, exist_ok=True)
+
+    artifact_path = os.path.join(out_dir, f"{step_id}.json")
+
+    payload = {
+        "schema_version": "step_result_v1",
+        "run_id": run_id,
+        "dataset_id": dataset_id,
+        "step_id": step_id,
+        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+        "result": step_result,
+    }
+
+    with open(artifact_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2)
+
     return artifact_path

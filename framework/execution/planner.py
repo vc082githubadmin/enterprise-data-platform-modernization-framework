@@ -53,6 +53,11 @@ def _build_read_step(contract: Dict[str, Any], adapter: str) -> ExecutionStep:
                 "location": _get(contract, "source.file.location"),
                 "options": _get(contract, "source.file.options", {}) or {},
                 "expected_columns": [c.get("name") for c in (_get(contract, "schema.columns") or []) if isinstance(c, dict)],
+                "expected_schema": [
+                    {"name": c.get("name"), "type": c.get("type"), "nullable": c.get("nullable", True)}
+                        for c in (_get(contract, "schema.columns") or [])
+                        if isinstance(c, dict)
+                    ],
             },
             outputs={"dataset_ref": "df:read"},  # symbolic reference for later steps
         )

@@ -14,6 +14,8 @@ from framework.core.artifacts.writer import (
     write_execution_summary_artifact,
     write_execution_not_attempted_artifact,
 )
+from framework.core.artifacts.writer import write_step_result_artifact
+from framework.execution.adapters.registry import DEFAULT_ADAPTER_REGISTRY
 
 from framework.core.contract_validator import validate_contract
 
@@ -126,6 +128,32 @@ def run_contract(
         base_dir=artifacts_base_dir,
     )
 
+    runtime_objects: Dict[str, Any] = {}
+
+    adapter = DEFAULT_ADAPTER_REGISTRY.resolve(plan.adapter_name)
+
+    step_results = []
+    step_result_refs = {}
+
+    overall_status = ExecutionStatus.SUCCEEDED
+
+    for step in plan.steps:
+        step_result = adapter.execute_step(step, ctx, runtime_objects)
+        step_results.append(step_result)
+
+        ref = write_step_result_artifact(
+            dataset_id=dataset_id,
+            run_id=ctx.run_id,
+            step_id=step.step_id,
+            step_result=step_result.to_dict(),
+            base_dir=artifacts_base_dir,
+        )
+        step_result_refs[step.step_id] = ref
+
+        if step_result.status == ExecutionStatus.FAILED:
+            overall_status = ExecutionStatus.FAILED
+            break
+
     # 5) Write summary (Day 1: stub / planned)
     summary_ref = write_execution_summary_artifact(
         dataset_id=dataset_id,
@@ -133,14 +161,16 @@ def run_contract(
         execution_summary={
             "run_id": ctx.run_id,
             "dataset_id": dataset_id,
-            "status": ExecutionStatus.PLANNED.value,
+            "status": overall_status.value,            
             "timestamp_utc": utc_now_iso(),
-            "note": "Day1 stub - planner + artifacts only. No adapter execution.",
+            "note": "Day3 execution - steps executed via adapter with step artifacts. Summary includes refs to step results.",
             "refs": {
                 "validation_artifact": validation_artifact_path,
                 "execution_context": ctx_ref,
                 "execution_plan": plan_ref,
             },
+            "step_result_refs": step_result_refs,
+            "step_results": [sr.to_dict() for sr in step_results],
             "steps": [
                 {"step_id": s.step_id, "name": s.name, "adapter": s.adapter}
                 for s in plan.steps
@@ -152,8 +182,8 @@ def run_contract(
     return ExecutionResult(
         run_id=ctx.run_id,
         dataset_name=dataset_id,
-        status=ExecutionStatus.PLANNED,
+        status=overall_status,
         plan_ref=plan_ref,
         summary_ref=summary_ref,
-        step_results=[],
+        step_results=step_results,
     )
