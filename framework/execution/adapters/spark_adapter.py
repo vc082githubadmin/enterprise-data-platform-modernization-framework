@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional
 
 import os
 import pandas as pd
+import hashlib
 
 from framework.execution.adapters.base import ExecutionAdapter
 from framework.execution.execution_models import ExecutionStatus, ExecutionStep, StepResult
@@ -98,6 +99,15 @@ class SparkAdapter(ExecutionAdapter):
 
         if not os.path.exists(location):
             raise FileNotFoundError(f"Source file not found: {location}")
+        
+        file_stats = os.stat(location)
+        source_metadata = {
+            "source_path": location,
+            "file_size_bytes": int(file_stats.st_size),
+            "last_modified_utc": datetime.fromtimestamp(
+                file_stats.st_mtime, timezone.utc
+            ).isoformat(),
+        }
 
         if fmt == "csv":
             df = pd.read_csv(location, **(step.inputs.get("options") or {}))
@@ -150,6 +160,7 @@ class SparkAdapter(ExecutionAdapter):
                 "observed_columns": list(df.columns),
                 "observed_types": observed_types,
                 "coercions_applied": type_coercions,
+                "source_metadata": source_metadata,
             },
         }
 
@@ -218,38 +229,106 @@ class SparkAdapter(ExecutionAdapter):
         if mode not in ("append", "overwrite"):
             raise ValueError(f"Unsupported write mode in v0.1: {mode}")
 
+        primary_keys = step.inputs.get("primary_keys") or []
+
+        # --- Day 4: Idempotent append when primary keys exist ---
         if mode == "overwrite" or not os.path.exists(out_path):
             df.to_csv(out_path, index=False)
-            written = int(len(df))
+
+            rows_before = 0
+            rows_after = int(len(df))
+            rows_inserted = int(len(df))
+            rows_updated = 0
+
         else:
-            # append: read existing then concat then write (simple, not optimized)
             existing = pd.read_csv(out_path)
-            combined = pd.concat([existing, df], ignore_index=True)
-            combined.to_csv(out_path, index=False)
-            written = int(len(df))
+            rows_before = int(len(existing))
+
+            if primary_keys:
+                # Upsert semantics: new rows overwrite old rows on PK (last write wins)
+                combined = pd.concat([existing, df], ignore_index=True)
+
+                # Keep last occurrence of each PK -> incoming df overwrites existing
+                deduped = combined.drop_duplicates(subset=primary_keys, keep="last")
+
+                rows_after = int(len(deduped))
+
+                # Compute inserted vs updated (approx but useful for v0.1)
+                existing_keys = set(tuple(r) for r in existing[primary_keys].astype(str).values.tolist()) if rows_before > 0 else set()
+                incoming_keys = set(tuple(r) for r in df[primary_keys].astype(str).values.tolist()) if len(df) > 0 else set()
+
+                updated_keys = incoming_keys.intersection(existing_keys)
+                inserted_keys = incoming_keys.difference(existing_keys)
+
+                rows_updated = int(len(updated_keys))
+                rows_inserted = int(len(inserted_keys))
+
+                deduped.to_csv(out_path, index=False)
+
+            else:
+                # Fallback append behavior (no PK defined)
+                combined = pd.concat([existing, df], ignore_index=True)
+                combined.to_csv(out_path, index=False)
+
+                rows_after = int(len(combined))
+                rows_inserted = int(len(df))
+                rows_updated = 0
 
         runtime_objects[(step.outputs or {}).get("target_ref", target_table)] = out_path
 
         return {
-            "metrics": {"rows_written": written},
-            "evidence": {"output_path": out_path, "mode": mode},
-        }
+            "metrics": {
+                "rows_before": rows_before,
+                "rows_after": rows_after,
+                "rows_inserted": rows_inserted,
+                "rows_updated": rows_updated,
+            },
+            "evidence": {
+                "output_path": out_path,
+                "target_table": target_table, 
+                "mode": mode,
+                "primary_keys": primary_keys,
+            },
+    }
 
     def _postcheck(self, step: ExecutionStep, runtime_objects: Dict[str, Any]) -> Dict[str, Any]:
-        # v0.1: ensure df:read exists and has rows OR target file exists (simple)
+        target_ref = step.inputs.get("target_ref")
+        target_path = runtime_objects.get(target_ref)
+
+        # 1️⃣ Prefer validating the written target
+        if target_path and os.path.exists(target_path):
+            # Compute MD5 checksum
+            hasher = hashlib.md5()
+            with open(target_path, "rb") as f:
+                for chunk in iter(lambda: f.read(8192), b""):
+                    hasher.update(chunk)
+            output_md5 = hasher.hexdigest()
+
+            check_df = pd.read_csv(target_path)
+            rowcount = int(len(check_df))
+            if rowcount <= 0:
+                raise ValueError("POSTCHECK failed: target rowcount is 0")
+
+            return {
+                "metrics": {
+                    "rowcount": rowcount,
+                },
+                "evidence": {
+                    "checked": target_path,
+                    "source": "target_file",
+                    "output_md5": output_md5,
+                },
+            }
+
+        # 2️⃣ Fallback to in-memory dataframe
         df = runtime_objects.get("df:read")
-        if df is None:
-            # maybe we wrote to target path instead
-            target_ref = step.inputs.get("target_ref")
-            target_path = runtime_objects.get(target_ref)
-            if target_path and os.path.exists(target_path):
-                check_df = pd.read_csv(target_path)
-                if len(check_df) <= 0:
-                    raise ValueError("POSTCHECK failed: target rowcount is 0")
-                return {"metrics": {"rowcount": int(len(check_df))}, "evidence": {"checked": target_path}}
-            raise ValueError("POSTCHECK failed: no df:read and no target path found")
+        if df is not None:
+            if len(df) <= 0:
+                raise ValueError("POSTCHECK failed: df:read rowcount is 0")
 
-        if len(df) <= 0:
-            raise ValueError("POSTCHECK failed: df:read rowcount is 0")
+            return {
+                "metrics": {"rowcount": int(len(df))},
+                "evidence": {"checked": "df:read", "source": "runtime_object"},
+            }
 
-        return {"metrics": {"rowcount": int(len(df))}, "evidence": {"checked": "df:read"}}
+        raise ValueError("POSTCHECK failed: no target path and no df:read found")
