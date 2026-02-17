@@ -1,0 +1,62 @@
+contract:
+  schema_version: 1
+  document_version: "0.1"
+  created_by: "data-platform-team"
+  created_at: "2026-02-16"
+  description: "Snowflake table ingestion (stub mode) for artifact parity testing"
+
+dataset:
+  id: "payments.sample_customer"
+  name: "sample_customer"
+  domain: "payments"
+  description: "Stub Snowflake table ingestion to validate execution-plane symmetry."
+  owner:
+    team: "data-platform-team"
+    slack: "#data-platform"
+    email: "data-platform@company.com"
+  tags: ["sample", "payments", "snowflake", "stub"]
+
+source:
+  kind: "table"
+  system: "snowflake"
+  table:
+    database: "DEMO_DB"
+    schema: "PUBLIC"
+    name: "SAMPLE_CUSTOMER"
+    # Optional: fully-qualified name if your planner prefers it
+    fqn: "DEMO_DB.PUBLIC.SAMPLE_CUSTOMER"
+    options: {}
+
+target:
+  layer: "bronze"
+  name: "sample_customer_snowflake"
+  table: "BRONZE.SAMPLE_CUSTOMER_SNOWFLAKE"
+  write:
+    mode: "append"
+    merge:
+      enabled: false
+
+schema:
+  version: 1
+  columns:
+    - name: "customer_id"
+      type: "string"
+      nullable: false
+    - name: "created_ts"
+      type: "timestamp"
+      nullable: true
+
+keys:
+  primary: ["customer_id"]
+
+partitioning:
+  columns: ["created_ts"]
+
+governance:
+  quality:
+    enabled: false
+    rules: []
+  lineage:
+    enabled: false
+  observability:
+    enabled: false

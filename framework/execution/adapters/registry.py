@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Dict
 from framework.execution.adapters.base import ExecutionAdapter
 from framework.execution.adapters.spark_adapter import SparkAdapter
-
+from framework.execution.adapters.snowflake_adapter import SnowflakeAdapter
 
 
 class AdapterNotFoundError(RuntimeError):
@@ -26,3 +26,4 @@ class AdapterRegistry:
 # Day-1 default registry (empty)
 DEFAULT_ADAPTER_REGISTRY = AdapterRegistry()
 DEFAULT_ADAPTER_REGISTRY.register(SparkAdapter())
+DEFAULT_ADAPTER_REGISTRY.register(SnowflakeAdapter())
