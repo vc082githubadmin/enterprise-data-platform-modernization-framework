@@ -39,6 +39,18 @@ def main():
 
     print(json.dumps(result.to_dict(), indent=2))
 
+    # v0.2 CLI exit codes:
+    # 0 = SUCCEEDED
+    # 2 = SKIPPED (validation gate)
+    # 1 = FAILED (execution)
+    status = result.status.value if hasattr(result.status, "value") else str(result.status)
+
+    if status == "SUCCEEDED":
+        sys.exit(0)
+    if status == "SKIPPED":
+        sys.exit(2)
+    sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

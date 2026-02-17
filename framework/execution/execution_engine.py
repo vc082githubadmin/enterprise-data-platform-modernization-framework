@@ -3,22 +3,19 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from framework.execution.execution_models import ExecutionResult, ExecutionStatus
-from framework.execution.planner import build_execution_plan
-from framework.runtime.runtime_context import RuntimeContext
-
 from framework.core.artifacts.writer import (
     write_validation_artifact,
     write_execution_context_artifact,
     write_execution_plan_artifact,
     write_execution_summary_artifact,
     write_execution_not_attempted_artifact,
+    write_step_result_artifact,
 )
-from framework.core.artifacts.writer import write_step_result_artifact
-from framework.execution.adapters.registry import DEFAULT_ADAPTER_REGISTRY
-
 from framework.core.contract_validator import validate_contract
-
+from framework.execution.adapters.registry import DEFAULT_ADAPTER_REGISTRY
+from framework.execution.execution_models import ExecutionResult, ExecutionStatus
+from framework.execution.planner import build_execution_plan
+from framework.runtime.runtime_context import RuntimeContext
 
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -63,10 +60,10 @@ def run_contract(
     dataset_id = dataset.get("id") or dataset.get("name") or "unknown.dataset"
     ctx = ctx or RuntimeContext.new(dataset_name=dataset_id)
 
-    # 1) Week 1: validate first (governance gate)
+    # 1) Validation-first governance gate (Week 1)
     validation_result = validate_contract(contract)
+    has_errors = _has_errors(validation_result)
 
-    # Write Week 1 validation artifact (this makes Day 1 self-contained)
     validation_artifact_path = write_validation_artifact(
         dataset_id=dataset_id,
         run_id=ctx.run_id,
@@ -76,11 +73,10 @@ def run_contract(
         base_dir="artifacts/validation",
     )
 
-    # 2) If validation fails → no execution
-    has_errors = _has_errors(validation_result)
-
+    # 2) If validation fails → execution is not attempted
     if has_errors:
         reason = {
+            "error_code": "VALIDATION_FAILED",
             "message": "Validation failed. Execution not attempted.",
             "validation_artifact": validation_artifact_path,
             "validation_summary": _safe_to_dict(validation_result),
@@ -116,7 +112,7 @@ def run_contract(
         base_dir=artifacts_base_dir,
     )
 
-    # 4) Build + write plan (Day 1 stub)
+    # 4) Build + write deterministic execution plan (before any execution)
     plan = build_execution_plan(contract, run_id=ctx.run_id, dataset_name=dataset_id)
     plan_ref = write_execution_plan_artifact(
         dataset_id=dataset_id,
@@ -128,14 +124,17 @@ def run_contract(
         base_dir=artifacts_base_dir,
     )
 
+    # 5) Execute steps via adapter, artifact each step result
     runtime_objects: Dict[str, Any] = {}
-
     adapter = DEFAULT_ADAPTER_REGISTRY.resolve(plan.adapter_name)
 
     step_results = []
     step_result_refs = {}
 
     overall_status = ExecutionStatus.SUCCEEDED
+    failed_step_id = None
+    failure_code = None
+    failure_message = None
 
     for step in plan.steps:
         step_result = adapter.execute_step(step, ctx, runtime_objects)
@@ -151,10 +150,23 @@ def run_contract(
         step_result_refs[step.step_id] = ref
 
         if step_result.status == ExecutionStatus.FAILED:
+            failed_step_id = step.step_id
+            # pull from errors if present
+            if step_result.errors:
+                failure_code = step_result.errors[0].get("code")
+                failure_message = step_result.errors[0].get("message")
             overall_status = ExecutionStatus.FAILED
             break
 
-    # 5) Write summary (Day 1: stub / planned)
+    failure_block = None
+    if overall_status == ExecutionStatus.FAILED:
+        failure_block = {
+            "failed_step_id": failed_step_id,
+            "error_code": failure_code,
+            "error_message": failure_message,
+        }
+
+    # 6) Unified execution summary artifact
     summary_ref = write_execution_summary_artifact(
         dataset_id=dataset_id,
         run_id=ctx.run_id,
@@ -175,6 +187,7 @@ def run_contract(
                 {"step_id": s.step_id, "name": s.name, "adapter": s.adapter}
                 for s in plan.steps
             ],
+            "failure": failure_block,
         },
         base_dir=artifacts_base_dir,
     )

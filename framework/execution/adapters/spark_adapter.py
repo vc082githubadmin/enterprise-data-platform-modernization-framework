@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import asdict
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 import os
 import pandas as pd
 import hashlib
 
+from framework.execution.error_mapping import map_exception_to_error
 from framework.execution.adapters.base import ExecutionAdapter
 from framework.execution.execution_models import ExecutionStatus, ExecutionStep, StepResult
 from framework.runtime.runtime_context import RuntimeContext
@@ -76,14 +76,15 @@ class SparkAdapter(ExecutionAdapter):
 
         except Exception as e:
             end = utc_now_iso()
+            code, msg = map_exception_to_error(e)
             return StepResult(
                 step_id=step.step_id,
                 status=ExecutionStatus.FAILED,
                 start_ts=start,
                 end_ts=end,
                 metrics={},
-                evidence={"exception_type": type(e).__name__},
-                errors=[{"message": str(e)}],
+                evidence={"exception_type": type(e).__name__, "error_code": code.value},
+                errors=[{"code": code.value, "message": msg}],
             )
 
     def _read(self, step: ExecutionStep, runtime_objects: Dict[str, Any]) -> Dict[str, Any]:
@@ -289,7 +290,7 @@ class SparkAdapter(ExecutionAdapter):
                 "mode": mode,
                 "primary_keys": primary_keys,
             },
-    }
+        }
 
     def _postcheck(self, step: ExecutionStep, runtime_objects: Dict[str, Any]) -> Dict[str, Any]:
         target_ref = step.inputs.get("target_ref")
